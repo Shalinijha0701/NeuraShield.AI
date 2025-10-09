@@ -1,0 +1,143 @@
+name: NeuraShield.AI Analysis
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  neurashield-analysis:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+      with:
+        fetch-depth: 0
+
+    - name: Set up Python
+      uses: actions/setup-python@v4
+      with:
+        python-version: '3.11'
+
+    - name: Install NeuraShield CLI
+      run: |
+        pip install neurashield-cli
+        # In production, this would be: pip install neurashield-ai
+
+    - name: Run Neural Code Brain Analysis
+      id: code-analysis
+      run: |
+        neurashield analyze code \
+          --path . \
+          --output code-analysis.json \
+          --format json
+      continue-on-error: true
+
+    - name: Run Quantum Security Shield Scan
+      id: security-scan
+      run: |
+        neurashield scan security \
+          --path . \
+          --dependencies requirements.txt \
+          --output security-scan.json \
+          --format json
+      continue-on-error: true
+
+    - name: Run Adaptive DevOps Optimizer
+      id: pipeline-analysis
+      run: |
+        neurashield optimize pipeline \
+          --config .github/workflows/ \
+          --output pipeline-analysis.json \
+          --format json
+      continue-on-error: true
+
+    - name: Generate Trust Score Report
+      run: |
+        neurashield report trust-score \
+          --code-analysis code-analysis.json \
+          --security-scan security-scan.json \
+          --pipeline-analysis pipeline-analysis.json \
+          --output trust-report.json
+
+    - name: Upload Analysis Results
+      uses: actions/upload-artifact@v3
+      with:
+        name: neurashield-analysis
+        path: |
+          code-analysis.json
+          security-scan.json
+          pipeline-analysis.json
+          trust-report.json
+
+    - name: Comment PR with Results
+      if: github.event_name == 'pull_request'
+      uses: actions/github-script@v6
+      with:
+        script: |
+          const fs = require('fs');
+          
+          // Read analysis results
+          const trustReport = JSON.parse(fs.readFileSync('trust-report.json', 'utf8'));
+          const codeAnalysis = JSON.parse(fs.readFileSync('code-analysis.json', 'utf8'));
+          const securityScan = JSON.parse(fs.readFileSync('security-scan.json', 'utf8'));
+          
+          // Create comment body
+          const trustScore = Math.round(trustReport.overall_trust_score * 100);
+          const trustEmoji = trustScore >= 80 ? '🟢' : trustScore >= 60 ? '🟡' : '🔴';
+          
+          const comment = `## 🛡️ NeuraShield.AI Analysis Results
+          
+          ### Overall Trust Score: ${trustEmoji} ${trustScore}%
+          
+          #### 🧠 Neural Code Brain
+          - **Quality Score**: ${Math.round(codeAnalysis.quality_score * 100)}%
+          - **Bug Probability**: ${Math.round(codeAnalysis.bug_probability * 100)}%
+          - **Issues Found**: ${codeAnalysis.issues.length}
+          
+          #### 🔒 Quantum Security Shield  
+          - **Security Score**: ${Math.round(securityScan.security_score * 100)}%
+          - **Vulnerabilities**: ${securityScan.vulnerabilities.length}
+          - **Secrets Detected**: ${securityScan.secrets_detected.length}
+          - **Risk Level**: ${securityScan.risk_level.toUpperCase()}
+          
+          ${codeAnalysis.suggestions.length > 0 ? `
+          #### 💡 Suggestions
+          ${codeAnalysis.suggestions.map(s => `- ${s}`).join('\n')}
+          ` : ''}
+          
+          ${securityScan.vulnerabilities.length > 0 ? `
+          #### ⚠️ Security Issues
+          ${securityScan.vulnerabilities.slice(0, 5).map(v => `- **${v.type}** (Line ${v.line}): ${v.message}`).join('\n')}
+          ${securityScan.vulnerabilities.length > 5 ? `\n... and ${securityScan.vulnerabilities.length - 5} more` : ''}
+          ` : ''}
+          
+          ---
+          *Powered by NeuraShield.AI - Self-Learning AI Guardian for Modern DevOps*`;
+          
+          github.rest.issues.createComment({
+            issue_number: context.issue.number,
+            owner: context.repo.owner,
+            repo: context.repo.repo,
+            body: comment
+          });
+
+    - name: Fail if Critical Issues Found
+      run: |
+        # Check for critical security issues
+        CRITICAL_VULNS=$(jq '.vulnerabilities | map(select(.severity == "critical")) | length' security-scan.json)
+        TRUST_SCORE=$(jq '.overall_trust_score' trust-report.json)
+        
+        if [ "$CRITICAL_VULNS" -gt 0 ]; then
+          echo "❌ Critical security vulnerabilities found: $CRITICAL_VULNS"
+          exit 1
+        fi
+        
+        if (( $(echo "$TRUST_SCORE < 0.6" | bc -l) )); then
+          echo "❌ Trust score too low: $TRUST_SCORE"
+          exit 1
+        fi
+        
+        echo "✅ All NeuraShield.AI checks passed!"
